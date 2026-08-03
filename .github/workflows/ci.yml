@@ -29,8 +29,17 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
-      - name: Run tests
-        run: uv run pytest -q
+      # The floor is the measured 98 percent rounded down and reduced by two, so
+      # that a small refactor does not fail the build while a module arriving
+      # with no tests at all does. Figures are not compared byte for byte
+      # anywhere in this workflow: matplotlib output is not byte reproducible
+      # across platforms or across its own releases, so such a check would fail
+      # for reasons that have nothing to do with this package. The code paths
+      # that draw them are exercised by the test suite instead.
+      - name: Run tests with coverage
+        run: >
+          uv run pytest -q --cov=src/sensor_fusion --cov-report=term-missing
+          --cov-fail-under=96
 
       - name: Lint
         run: uv run ruff check .

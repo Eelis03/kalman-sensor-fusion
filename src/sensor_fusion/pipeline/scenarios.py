@@ -30,6 +30,8 @@ __all__ = [
     "RADAR_OFFSET_STEPS",
     "RADAR_PERIOD_STEPS",
     "boundary_crossing_target",
+    "distant_target",
+    "sensor_regimes",
     "straight_target",
     "turning_target",
     "with_latency",
@@ -124,6 +126,95 @@ def boundary_crossing_target(steps: int = 2000, process_noise: bool = True) -> S
         base_dt=BASE_DT,
         steps=steps,
         process_noise=process_noise,
+    )
+
+
+def distant_target(steps: int = 2000) -> ScenarioConfig:
+    """A far, fast, turning target, used to sweep the strength of the nonlinearity.
+
+    The regime comparison between the extended and unscented filters needs a
+    target far enough from the sensor that a bearing error becomes a large
+    cross-range position error, which is where a Jacobian linearisation of the
+    polar measurement starts to cost something. This one starts 100 m out and
+    heads away from the sensor at 14 m/s while turning at 0.35 rad/s, under a
+    yaw disturbance five times the one the base scenario carries.
+
+    The starting state is radially outward rather than tangential, and that is
+    the whole reason this scenario exists as a named configuration rather than
+    as a literal inside an example script. An earlier version started 63 m out
+    on a tangential heading, and under this yaw disturbance the target could
+    curl back through the sensor: the worst of 200 seeds came within 0.21 m of
+    the origin, and the worst of the forty seeds the published sweep actually
+    used came within 0.49 m. Every number that sweep produced was therefore
+    partly a statement about the polar singularity. Heading outward instead puts
+    the worst of 200 seeds at 35 m. See :data:`MINIMUM_SAFE_RANGE`.
+    """
+    return ScenarioConfig(
+        truth_model=ConstantTurnRate(spectral_density_accel=0.5, spectral_density_yaw=0.02),
+        initial_mean=np.array([95.0, -31.0, 14.0, -0.32, 0.35]),
+        initial_cov=np.diag(np.array([4.0, 4.0, 4.0, 0.25, 0.09])),
+        schedules=_schedules(),
+        base_dt=BASE_DT,
+        steps=steps,
+    )
+
+
+def sensor_regimes(config: ScenarioConfig) -> tuple[tuple[str, ScenarioConfig], ...]:
+    """Return four ways of observing ``config``, from both sensors to a poor radar.
+
+    Every returned configuration keeps the truth model, the initial state, and
+    the grid of ``config`` and changes only what observes the target, so a sweep
+    across them varies the strength of the nonlinearity the filter has to push a
+    Gaussian through and nothing else. The first keeps both sensors. The rest
+    remove the linear lidar and then degrade the radar, in rate and in bearing
+    accuracy together, since those are the two things that let the covariance
+    grow wide enough between updates for the curvature of the polar measurement
+    to matter across it.
+
+    The same ladder is applied to more than one target on purpose. Which filter
+    wins is a property of the pair, not of the sensor alone, and running one
+    ladder on two targets is what shows that.
+    """
+    base = config
+
+    def with_schedules(schedules: tuple[SensorSchedule, ...]) -> ScenarioConfig:
+        return ScenarioConfig(
+            truth_model=base.truth_model,
+            initial_mean=base.initial_mean,
+            initial_cov=base.initial_cov,
+            schedules=schedules,
+            base_dt=base.base_dt,
+            steps=base.steps,
+        )
+
+    return (
+        ("lidar and radar, 10 Hz and 13.3 Hz", base),
+        (
+            "radar only, 13.3 Hz, bearing sigma 0.03 rad",
+            with_schedules((SensorSchedule(sensor=Radar(), period_steps=RADAR_PERIOD_STEPS),)),
+        ),
+        (
+            "radar only, 5 Hz, bearing sigma 0.10 rad",
+            with_schedules(
+                (
+                    SensorSchedule(
+                        sensor=Radar(sigma_range=1.0, sigma_bearing=0.10, sigma_range_rate=1.0),
+                        period_steps=40,
+                    ),
+                )
+            ),
+        ),
+        (
+            "radar only, 2.5 Hz, bearing sigma 0.20 rad",
+            with_schedules(
+                (
+                    SensorSchedule(
+                        sensor=Radar(sigma_range=2.0, sigma_bearing=0.20, sigma_range_rate=2.0),
+                        period_steps=80,
+                    ),
+                )
+            ),
+        ),
     )
 
 

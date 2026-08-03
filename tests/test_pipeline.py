@@ -25,6 +25,8 @@ from sensor_fusion.pipeline.scenarios import (
     RADAR_OFFSET_STEPS,
     RADAR_PERIOD_STEPS,
     boundary_crossing_target,
+    distant_target,
+    sensor_regimes,
     straight_target,
     turning_target,
     with_latency,
@@ -131,8 +133,13 @@ class TestScenarioGeometry:
 
     @pytest.mark.parametrize(
         "config",
-        [straight_target(steps=2000), turning_target(steps=2000), boundary_crossing_target()],
-        ids=["straight", "turning", "boundary"],
+        [
+            straight_target(steps=2000),
+            turning_target(steps=2000),
+            boundary_crossing_target(),
+            distant_target(steps=2000),
+        ],
+        ids=["straight", "turning", "boundary", "distant"],
     )
     def test_target_stays_clear_of_the_sensor(self, config: ScenarioConfig) -> None:
         """No seed brings the target within the safe range of the origin.
@@ -144,12 +151,31 @@ class TestScenarioGeometry:
         are checked rather than the handful the examples use, because the
         approach distance depends on the process noise realisation and the worst
         seed is what matters.
+
+        ``distant_target`` is covered here because it was not, and paid for it.
+        While it lived as a literal inside an example script it escaped this
+        test, and its earlier tangential starting state let the target curl back
+        through the origin: 0.21 m at the worst of 200 seeds, and 0.49 m within
+        the forty seeds the published sweep used. A scenario that is not named
+        here is a scenario nothing checks.
         """
         closest = np.inf
         for seed in range(200):
             cartesian = simulate(config, seed=seed).truth_cartesian
             closest = min(closest, float(np.min(np.hypot(cartesian[:, 0], cartesian[:, 1]))))
         assert closest > MINIMUM_SAFE_RANGE
+
+    def test_every_sweep_regime_shares_the_guarded_truth(self) -> None:
+        """The regimes must differ only in what observes the target.
+
+        The guard above checks one configuration. That is enough only if every
+        regime generates the same truth from the same seed, which is also what
+        makes the sweep a comparison of sensors rather than of trajectories.
+        """
+        regimes = sensor_regimes(distant_target(steps=400))
+        reference = simulate(regimes[0][1], seed=3).truth_states
+        for _, config in regimes[1:]:
+            assert np.array_equal(simulate(config, seed=3).truth_states, reference)
 
 
 class TestOutOfOrderPolicies:

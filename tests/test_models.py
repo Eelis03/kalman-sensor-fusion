@@ -137,6 +137,113 @@ class TestMotionJacobians:
             assert np.allclose(model.predict(state, 0.13), transition @ state, atol=1e-14)
 
 
+class TestCartesianMoment:
+    """The Cartesian second moment must be exact, not a linearisation.
+
+    A Cartesian normalised estimation error squared divides the error by this
+    matrix, so if the matrix is wrong the statistic is miscalibrated and every
+    verdict taken from it inherits the error. The reference here is a Monte Carlo
+    projection of the belief, which knows nothing about the closed form.
+    """
+
+    # A heading standard deviation of 0.3 rad on a 14 m/s target, which is the
+    # order of uncertainty a filter carries before its first few updates. Every
+    # correlation is non-zero so that no cross term can be dropped unnoticed.
+    CTRV_MEAN = np.array([60.0, -20.0, 14.0, 0.4, 0.35])
+    CTRV_COV = np.array(
+        [
+            [4.0, 0.5, 0.3, -0.2, 0.0],
+            [0.5, 4.0, -0.1, 0.15, 0.0],
+            [0.3, -0.1, 1.0, 0.12, 0.0],
+            [-0.2, 0.15, 0.12, 0.09, 0.01],
+            [0.0, 0.0, 0.0, 0.01, 0.04],
+        ]
+    )
+
+    @staticmethod
+    def _monte_carlo(mean: np.ndarray, cov: np.ndarray, samples: int = 400_000) -> np.ndarray:
+        """Project the belief by sampling, with no reference to the closed form."""
+        rng = np.random.default_rng(20260803)
+        draws = rng.multivariate_normal(mean, cov, size=samples, method="cholesky")
+        estimate = np.array(
+            [mean[0], mean[1], mean[2] * math.cos(mean[3]), mean[2] * math.sin(mean[3])]
+        )
+        projected = np.column_stack(
+            [
+                draws[:, 0],
+                draws[:, 1],
+                draws[:, 2] * np.cos(draws[:, 3]),
+                draws[:, 2] * np.sin(draws[:, 3]),
+            ]
+        )
+        residual = projected - estimate
+        return np.asarray(residual.T @ residual / samples)
+
+    @pytest.mark.parametrize("model", MOTION_MODELS, ids=lambda m: m.name)
+    def test_a_linear_view_reduces_to_the_jacobian_projection(self, model: MotionModel) -> None:
+        """Where ``to_cartesian`` is linear the closed form must be ``J P J.T``."""
+        if not model.is_linear:
+            pytest.skip("the CTRV Cartesian view is nonlinear by construction")
+        rng = np.random.default_rng(7)
+        for state in MOTION_STATES[model.name]:
+            root = rng.standard_normal((model.dim, model.dim))
+            cov = root @ root.T + np.eye(model.dim)
+            projection = model.cartesian_jacobian(state)
+            assert np.allclose(
+                model.cartesian_moment(state, cov),
+                projection @ cov @ projection.T,
+                atol=1e-12,
+            )
+
+    def test_ctrv_moment_matches_a_sampled_projection(self) -> None:
+        """The closed form lands inside the Monte Carlo error; the Jacobian does not."""
+        model = ConstantTurnRate()
+        reference = self._monte_carlo(self.CTRV_MEAN, self.CTRV_COV)
+        projection = model.cartesian_jacobian(self.CTRV_MEAN)
+        linearised = projection @ self.CTRV_COV @ projection.T
+        exact = model.cartesian_moment(self.CTRV_MEAN, self.CTRV_COV)
+
+        scale = float(np.linalg.norm(reference))
+        closed_form_error = float(np.linalg.norm(exact - reference)) / scale
+        jacobian_error = float(np.linalg.norm(linearised - reference)) / scale
+        assert closed_form_error < 0.01, "the closed form must agree with the sample"
+        assert jacobian_error > 0.05, "guard the guard: the linearisation must be visibly wrong"
+
+    def test_ctrv_moment_leaves_the_cartesian_nees_unbiased(self) -> None:
+        """The point of the exercise, stated as an identity rather than a sample.
+
+        The expectation of ``e.T @ inv(M) @ e`` is ``trace(inv(M) @ E[e e.T])``,
+        so a normaliser equal to the true second moment gives exactly the four
+        degrees of freedom the chi-square bounds assume, whatever the shape of
+        the distribution. Substituting the Jacobian projection does not.
+        """
+        model = ConstantTurnRate()
+        exact = model.cartesian_moment(self.CTRV_MEAN, self.CTRV_COV)
+        projection = model.cartesian_jacobian(self.CTRV_MEAN)
+        linearised = projection @ self.CTRV_COV @ projection.T
+
+        assert float(np.trace(np.linalg.solve(exact, exact))) == pytest.approx(4.0, abs=1e-12)
+        under_linearisation = float(np.trace(np.linalg.solve(linearised, exact)))
+        assert under_linearisation > 5.0, "the linearised statistic is inflated, not neutral"
+
+    def test_ctrv_moment_is_a_valid_covariance(self) -> None:
+        """Symmetric and positive semi-definite, since it is a second moment."""
+        model = ConstantTurnRate()
+        for state in MOTION_STATES["ctrv"]:
+            moment = model.cartesian_moment(state, self.CTRV_COV)
+            assert np.allclose(moment, moment.T, atol=1e-12)
+            assert float(np.min(np.linalg.eigvalsh(moment))) >= -1e-9
+
+    def test_a_certain_heading_and_speed_leave_no_velocity_spread(self) -> None:
+        """With no speed or heading uncertainty the velocity block is exactly zero."""
+        model = ConstantTurnRate()
+        cov = np.zeros((5, 5), dtype=np.float64)
+        cov[0, 0] = cov[1, 1] = 2.5
+        moment = model.cartesian_moment(self.CTRV_MEAN, cov)
+        assert np.allclose(moment[2:, 2:], np.zeros((2, 2)), atol=1e-12)
+        assert np.allclose(moment[:2, :2], 2.5 * np.eye(2), atol=1e-12)
+
+
 class TestProcessNoise:
     """Structure and reproducibility of the process noise."""
 

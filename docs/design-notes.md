@@ -174,11 +174,12 @@ filter that fraction should sit near the confidence level, and it does: 97.4
 percent for NEES on the correctly specified run.
 
 The mean over runs is reported alongside the median over runs, because the mean
-is not robust. In radar-only tracking a single run in forty that loses the target
-raises the mean NEES from about 5.5 to 67.7 while the other thirty-nine are
-unremarkable, and reading that mean as a statement about the typical run would be
-wrong. A run whose time-averaged NEES exceeds ten times its degrees of freedom is
-counted as a lost track and reported separately.
+is not robust. Tracking the distant target on radar alone, the extended filter
+loses eight runs in forty and those eight carry the mean NEES to 103.8 while the
+median run sits at 10.9; reading that mean as a statement about the typical run
+would be wrong in both directions at once. A run whose time-averaged NEES exceeds
+ten times its degrees of freedom is counted as a lost track and reported
+separately, so the count and the median together say what the mean cannot.
 
 ### Asynchronous fusion
 
@@ -206,43 +207,63 @@ This is the question the package was built to answer, and the answer is taken
 from the measured numbers in the README results section rather than from the
 usual claim that the unscented filter is simply better.
 
-On the fused configuration, lidar and radar together on a turning target, the
-unscented filter is 1.0 percent better in position RMSE and 0.8 percent better in
-velocity RMSE than the extended filter, against a run-to-run standard deviation
-of about 12 percent. Both filters are consistent, both keep all forty tracks, and
-the unscented filter costs roughly a factor of two in wall clock time. On that
-configuration it is not worth it. The lidar is linear and reports at 10 Hz, so
-the covariance never has time to grow wide enough for the curvature of the polar
-measurement to matter across it, which is precisely the condition under which a
-Jacobian linearisation is a good approximation.
+The same four-rung sensor ladder is run against two targets, because the answer
+turns out to be a property of the pair rather than of the sensor.
 
-Removing the lidar changes the answer, and it changes it in the covariance rather
-than in the accuracy. With radar alone at 13.3 Hz the accuracy gap is still only
-6 percent, but the extended filter's NEES rises to 8.953 against an expected 5,
-which classifies it as optimistic, and it loses 2 of 40 tracks. The unscented
-filter stays at 5.318, is classified consistent, and loses none. Degrading the
-radar further, to 2.5 Hz with a bearing standard deviation of 0.20 rad, gives the
-same pattern: extended filter NEES 17.179 and one track lost, unscented filter
-NEES 5.899 and none.
+On the base scenario, a target 50 to 70 m out turning at 0.8 rad/s, the two
+filters are interchangeable on every rung. Fused they differ by 1.0 percent in
+position RMSE, against a run-to-run standard deviation of about 12 percent. With
+the lidar removed they still agree to within 1 percent, and both stay consistent
+all the way down to a 2.5 Hz radar with a bearing standard deviation of 0.20 rad.
+The unscented filter costs roughly a factor of two in wall clock time and buys
+nothing measurable. The reason is that the covariance never grows wide enough,
+relative to the curvature of the polar measurement, for the difference between a
+Jacobian and a sigma point set to show up in it.
 
-There is a limit to this, and the sweep shows where it is. At 5 Hz with a bearing
-standard deviation of 0.10 rad both filters are optimistic and both lose a track,
-at NEES 67.652 and 59.304. The unscented transform recovers the moments of a
-nonlinearity accurately; it does not manufacture information. Once the
-measurement is too poor and too infrequent to support the state, neither filter
-has a trustworthy covariance and the answer is a better sensor or a better motion
-model, not a better moment propagation.
+Moving the target out to 100 m and letting it leave changes the answer, and it
+changes it in the covariance rather than in the accuracy. With both sensors
+present the extended filter's NEES is 7.750 against an expected 5, which
+classifies it as optimistic, while the unscented filter sits at 4.982 and is
+consistent. Neither loses a track and the accuracy gap is 13 percent. The shape
+matters more than the mean here and is in `docs/figures/nees-ekf-ukf.png`: the
+extended filter enters at twenty times its expected value and needs more than a
+second to fall inside its interval, spending 13.7 percent of the run above it
+against the unscented filter's 3.4 percent. From the same loose prior, on the
+same data, one of these filters can be believed immediately and the other cannot.
+
+With radar alone the gap widens into lost tracks. At 13.3 Hz the extended filter
+loses 8 of 40 and the unscented filter 2 of 40; at 5 Hz and a bearing standard
+deviation of 0.10 rad, 4 against 1; at 2.5 Hz and 0.20 rad, 6 against 4. The
+median run NEES, which is the robust statistic here because a single lost run
+moves the mean by two orders of magnitude, runs 10.923, 9.095 and 8.159 for the
+extended filter against 5.012, 5.637 and 5.533 for the unscented one.
+
+There is a limit to this, and the sweep shows where it is. On the last two rungs
+of the distant target both filters are classified optimistic and both lose
+tracks. The unscented transform recovers the moments of a nonlinearity
+accurately; it does not manufacture information. Once the measurement is too poor
+and too infrequent to support the state, neither filter has a trustworthy
+covariance and the answer is a better sensor or a better motion model, not a
+better moment propagation.
 
 The rule that falls out of these numbers is about the width of the covariance
-relative to the curvature of the measurement, not about the filter. Where a
-linear sensor keeps the covariance narrow, the two filters are interchangeable
-and the extended one is cheaper. Where the only information is nonlinear and
-arrives slowly enough for the covariance to grow between updates, but not so
-slowly that the state stops being observable in practice, the extended filter's
-covariance stops being trustworthy before its estimate stops being usable, and
-that is the failure the extra cost buys protection against. The practical test is
-not to argue about it: run both, measure NEES, and look at which one stays inside
-its bounds.
+relative to the curvature of the measurement, not about the filter and not about
+the sensor on its own. Where the covariance stays narrow, whether because a
+linear sensor keeps it narrow or because the target is close enough that the
+polar measurement is nearly linear across it, the two filters are
+interchangeable and the extended one is cheaper. Where the covariance is wide,
+whether at initialisation or because the only information is nonlinear and
+arrives slowly, the extended filter's covariance stops being trustworthy before
+its estimate stops being usable, and that is the failure the extra cost buys
+protection against. The practical test is not to argue about it: run both,
+measure NEES, and look at which one stays inside its bounds.
+
+An earlier version of this section reported the opposite split, with the fused
+case interchangeable and the radar-only case separating the filters. That was
+measured on a sweep scenario whose target could pass within half a metre of the
+sensor, so the separation it found was substantially a statement about the polar
+singularity. See the geometry entry under Known limitations for what was wrong
+and how it is now prevented.
 
 ## Rejected alternatives
 
@@ -333,6 +354,67 @@ noise factor here is closed form instead: an explicit Cholesky expression for th
 linear models and an explicit gain matrix for CTRV, each verified against the
 covariance it claims to factor in the test suite.
 
+## Closed limitations
+
+### The Cartesian NEES was a linearised projection
+
+What it said. When the filter's motion model is the model that generated the
+truth, NEES is computed in the filter's own state space and is exact. When they
+differ, as in the mis-specified campaigns, the covariance was projected onto the
+Cartesian view through the first-order Jacobian and the statistic inherited that
+approximation, so the mis-specified numbers had to be read as qualitative
+evidence rather than as calibrated values.
+
+What was wrong with it. A Cartesian NEES divides the error by a matrix that is
+supposed to be the covariance of that error. `J P J.T` is the first-order
+approximation to that covariance and is exact only when `to_cartesian` is linear.
+For the CTRV view, which resolves a polar velocity onto Cartesian axes, it is
+not: at a heading standard deviation of 0.3 rad on a 14 m/s target it understates
+the variance of the x velocity by 29.7 percent, and the statistic normalised by
+it has expectation 5.514 rather than 4. A verdict taken against chi-square bounds
+for four degrees of freedom is then wrong by 38 percent before the filter has
+done anything.
+
+What replaced it. Each motion model now returns the exact second moment of its
+own Cartesian view in closed form, as `MotionModel.cartesian_moment`. For the
+constant velocity and constant acceleration models the view is linear and the
+answer is the identity or a selection, which is `J P J.T` exactly. For CTRV the
+velocity is `v * exp(i * psi)` with `v` and `psi` jointly Gaussian, and every
+entry of the answer reduces to an expectation of the form `E[X exp(i t psi)]`,
+which has a closed form obtained by differentiating the joint moment generating
+function. The moment is taken about the estimate the filter actually reports,
+`to_cartesian(mean)`, rather than about the mean of the transformed distribution,
+because that is the point the error is measured from and the two differ by the
+bias the curvature introduces.
+
+What it cost. About fifty lines in the model layer and a derivation that has to
+be right, since an algebra error here would silently miscalibrate a statistic
+rather than raise. The test suite therefore checks it against a 400000 sample
+Monte Carlo projection that shares none of the algebra: the closed form lands
+0.09 percent away in Frobenius norm, which is the sampling error, and the
+Jacobian projection lands 10.2 percent away. Runtime cost is nil, since the
+closed form is a handful of flops against the Jacobian product it replaces.
+Nothing published changed, because every mis-specified campaign in this package
+runs a constant velocity filter whose Cartesian view was already linear.
+
+What remains. The projected error is not Gaussian even when the state is, so the
+statistic has exactly the right expectation but is only approximately chi-square
+distributed. The verdict is taken from the mean, which is now exact; the interval
+around it is not. A filter compared in a space it does not work in is still being
+asked a slightly different question from one compared natively, which is why the
+two statistics are still labelled apart.
+
+An unscented projection was tried first and rejected. Pushing the same sigma
+point set the unscented filter already builds through `to_cartesian` is better
+than the Jacobian and still not exact: on the same belief it lands 3.8 percent
+away in Frobenius norm against the Jacobian's 10.2 percent, understating the
+x velocity variance by 12.1 percent where the Jacobian understates it by 29.7
+percent, and leaving the statistic with an expectation of 4.259 rather than 4.
+It also costs a Cholesky factorisation and eleven projections per recorded step.
+Replacing an approximation whose error is known with one whose error is merely
+smaller, and paying more for it, is not a trade worth making when a closed form
+exists.
+
 ## Known limitations
 
 ### Single target, no data association
@@ -352,16 +434,6 @@ and the estimation error is serially correlated, so that comparison is an
 approximation. It errs in the safe direction, as argued above, but a filter that
 is marginally inconsistent could be classified as consistent by it. A block
 bootstrap over time would remove the assumption.
-
-### The Cartesian NEES is a linearised projection
-
-When the filter's motion model is the model that generated the truth, NEES is
-computed in the filter's own state space and is exact. When they differ, as in
-the mis-specified campaigns, the covariance is projected onto the Cartesian view
-through the first-order Jacobian and the statistic inherits that approximation.
-The statistic is labelled differently in the two cases so that no reader mistakes
-one for the other, but the mis-specified numbers should be read as strong
-qualitative evidence rather than as calibrated values.
 
 ### CTRV process noise is approximate in position
 
@@ -386,21 +458,56 @@ path enclosed the sensor, so under the process noise the target could pass withi
 0.33 m of the origin, and 3 percent of seeds came inside 1 m. Every published
 number was then partly a statement about a singularity rather than about a
 filter. The scenario was moved onto a circle of radius 12.5 m centred 64 m away,
-which puts the sensor well outside the path, and a test now asserts a minimum
-range of 15 m over 200 seeds for all three scenarios so that a future edit to a
-starting state cannot quietly reintroduce the problem. The measured worst
-approach is 18.3 m for the turning target, 25.0 m for the straight target, and
-23.9 m for the boundary crossing target.
+which puts the sensor well outside the path, and a test asserts a minimum range
+of 15 m over 200 seeds so that a future edit to a starting state cannot quietly
+reintroduce the problem.
+
+That fix was then found to be incomplete, and the way it was incomplete is worth
+recording. The test covered the three scenarios defined in the scenarios module.
+The regime sweep comparing the extended and unscented filters used a fourth
+configuration, written as literals inside `examples/ekf_versus_ukf.py`, which
+therefore no test ever saw. That configuration started 63 m out on a tangential
+heading with a yaw disturbance an order of magnitude stronger than the base
+scenario, and its nominal circle enclosed the sensor: the worst of 200 seeds came
+within 0.21 m of the origin, and the worst of the forty seeds the published sweep
+actually used came within 0.49 m. The comparison that section existed to make was
+therefore measuring the polar singularity as much as it was measuring a filter,
+and the conclusion it reached changed once the geometry was corrected.
+
+The scenario now lives in the scenarios module as `distant_target`, starting
+100 m out on an outward heading, and is covered by the same 200-seed test. The
+measured worst approach is 18.3 m for the turning target, 25.0 m for the straight
+target, 23.9 m for the boundary crossing target, and 35.2 m for the distant
+target. The general lesson is the narrow one: a scenario that is not named in the
+scenarios module is a scenario nothing checks, and the guard is only worth what
+its coverage is.
 
 ### Initial transient in the consistency statistics
 
-The across-run NEES sits above its upper bound for roughly the first 0.4 s of
-each run, while the filter converges from its initial covariance. That is
-expected behaviour for a filter starting from a deliberately loose prior, and it
-is visible in the top panel of the figure that `examples/consistency_study.py`
-writes. It is included in the grand mean rather than trimmed, which makes the
-reported verdict slightly harder to pass than it would be with a burn-in period
-removed.
+A filter starting from a deliberately loose prior can carry a covariance that is
+badly wrong for the first fraction of a second and perfectly good afterwards. On
+the base scenario there is no such transient to speak of: the correctly specified
+filter spends 2.6 percent of steps above its upper bound across the whole run,
+which is what a 95 percent interval predicts, and the top panel of
+`docs/figures/nees-specification.png` shows the trace starting inside. An earlier
+version of this entry claimed the statistic sat above its bound for the first
+0.4 s of every run. It does not, and did not once the turning scenario was moved
+off the sensor; the claim was a leftover.
+
+On the distant scenario the transient is real and large enough to decide a
+verdict, which is the entry in the results section worth reading twice: the
+extended filter enters at twenty times its expected value and its grand mean is
+above the interval because of that, not because of anything in the remaining nine
+seconds.
+
+Nothing is trimmed. The verdict describes the whole run the caller asked for,
+and the fraction of steps above the upper bound is reported next to it so that a
+transient and a persistent error are not read as the same thing. That fraction
+is a summary and not a substitute for the trace, which is why
+`docs/figures/nees-ekf-ukf.png` is in the README next to the numbers. A burn-in
+parameter was considered and rejected: a window chosen from the same data the
+verdict is then taken on is a selection on the outcome, and a fixed one would be
+right for one scenario and wrong for the next.
 
 ### Simulated sensors only
 

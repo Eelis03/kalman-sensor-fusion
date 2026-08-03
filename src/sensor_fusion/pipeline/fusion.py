@@ -160,9 +160,15 @@ def _native_nees(
 def _cartesian_nees(
     model: MotionModel, mean: FloatArray, cov: FloatArray, truth_cartesian: FloatArray
 ) -> tuple[FloatArray, float]:
-    projection = model.cartesian_jacobian(mean)
+    """Return the Cartesian estimate and its normalised estimation error squared.
+
+    The second moment comes from ``model.cartesian_moment``, which is the exact
+    covariance of ``truth_cartesian - estimate`` under the belief rather than a
+    Jacobian projection of the state covariance, so the statistic has expectation
+    four whatever the curvature of the Cartesian view.
+    """
     estimate = model.to_cartesian(mean)
-    projected_cov = projection @ cov @ projection.T
+    projected_cov = model.cartesian_moment(mean, cov)
     error = np.asarray(truth_cartesian, dtype=np.float64) - estimate
     return estimate, float(error @ np.linalg.solve(projected_cov, error))
 

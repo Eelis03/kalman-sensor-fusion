@@ -23,6 +23,12 @@ import pytest
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 SCRIPTS = sorted(path.name for path in EXAMPLES.glob("*.py"))
 
+FIGURES = Path(__file__).resolve().parent.parent / "docs" / "figures"
+# The README embeds these, and a repository that ships a heavy figure directory
+# is a repository people clone slowly. Kept in step with the budget the
+# portfolio validator applies.
+FIGURE_BUDGET_BYTES = 250 * 1024
+
 
 def _load(name: str) -> ModuleType:
     """Import an example script by path under a private module name."""
@@ -51,6 +57,7 @@ def test_the_expected_scripts_are_present() -> None:
         "compare_filters.py",
         "consistency_study.py",
         "ekf_versus_ukf.py",
+        "make_figures.py",
     ]
 
 
@@ -68,7 +75,9 @@ def test_script_runs_to_completion(
     assert captured.strip(), "a script that prints nothing has told the reader nothing"
 
 
-@pytest.mark.parametrize("name", ["compare_filters.py", "consistency_study.py"])
+@pytest.mark.parametrize(
+    "name", ["compare_filters.py", "consistency_study.py", "make_figures.py"]
+)
 def test_figure_writing_scripts_produce_files(name: str, outputs: Path) -> None:
     """Scripts that claim to write figures must actually write them."""
     module = _load(name)
@@ -77,3 +86,24 @@ def test_figure_writing_scripts_produce_files(name: str, outputs: Path) -> None:
     assert written, "no figure was written"
     for path in outputs.glob("*.png"):
         assert path.stat().st_size > 1000, f"{path.name} is implausibly small"
+
+
+def test_the_tracked_figures_exist_and_fit_their_budget() -> None:
+    """The figures the README embeds are committed, and small enough to stay committed.
+
+    They are snapshots, not build artefacts. Matplotlib output is not byte
+    reproducible across platforms or across its own releases, so nothing here
+    compares them byte for byte against a fresh run; that check would fail for
+    reasons unrelated to this package. What is checked is that they are present,
+    that they are plausible files, and that regenerating them has not quietly
+    pushed the repository over its figure budget.
+    """
+    figures = sorted((FIGURES).glob("*.png"))
+    assert [path.name for path in figures] == [
+        "nees-ekf-ukf.png",
+        "nees-specification.png",
+        "tracks.png",
+    ]
+    total = sum(path.stat().st_size for path in figures)
+    assert all(path.stat().st_size > 5_000 for path in figures)
+    assert total < FIGURE_BUDGET_BYTES, f"tracked figures total {total} bytes"

@@ -94,7 +94,8 @@ class ConsistencyReport:
         return (
             f"{self.statistic}: mean {self.mean:.3f} against expected {self.dof} "
             f"and the {self.runs}-run interval [{self.lower:.3f}, {self.upper:.3f}], "
-            f"{self.inside_fraction * 100:.1f} percent of steps inside, "
+            f"{self.inside_fraction * 100:.1f} percent of steps inside "
+            f"and {self.above_fraction * 100:.1f} percent above, "
             f"verdict {self.verdict.value}"
         )
 
@@ -126,6 +127,19 @@ def consistency_report(
     across-run average, and the fraction of individual time steps inside that
     interval is reported alongside as supporting evidence. For a consistent
     filter that fraction should sit near the confidence level.
+
+    ``above_fraction`` is reported next to the verdict rather than left in the
+    record, because the two answer different questions. A filter converging from
+    a loose prior can carry a covariance that is badly wrong for the first
+    fraction of a second and perfectly good for the remaining nine seconds, and
+    its grand mean will look the same as that of a filter which is mildly wrong
+    throughout. The fraction of steps above the bound separates those two, and
+    the shape of the trace over time separates them completely, which is what the
+    figures in ``docs/figures`` are for.
+
+    No burn-in is trimmed. A filter that needs a second before its covariance can
+    be trusted has a property worth reporting rather than one worth hiding, and
+    the verdict should describe the whole run the caller asked for.
     """
     array = np.asarray(samples, dtype=np.float64)
     if array.ndim != 2:

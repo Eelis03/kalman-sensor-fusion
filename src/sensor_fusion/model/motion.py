@@ -11,9 +11,11 @@ moment as one step of ``2 * dt``. That property is what lets the simulator
 generate ground truth on a fine grid while the filter runs on the coarse
 measurement grid without the truth becoming an unfair sample.
 
-CTRV is nonlinear and its process noise is the standard piecewise-constant
-acceleration injection, which does not compose exactly. Section "Known
-limitations" of ``docs/design-notes.md`` records that.
+CTRV is nonlinear and its process noise is two continuous white noise
+acceleration chains, one into the speed and one into the yaw rate. Those compose
+exactly in speed, heading, and yaw rate, and only approximately in position,
+because the along-track direction rotates within the interval. Section "Known
+limitations" of ``docs/design-notes.md`` records the size of that residual.
 
 Every model exposes a Cartesian view ``[px, py, vx, vy]`` together with the
 Jacobian of that view. The measurement models are written once against the
@@ -118,6 +120,23 @@ class MotionModel(Protocol):
 
     def cartesian_jacobian(self, state: FloatArray) -> FloatArray:
         """Return d(to_cartesian)/d(state), shape ``(4, dim)``."""
+
+    def cartesian_moment(self, mean: FloatArray, cov: FloatArray) -> FloatArray:
+        """Return the exact covariance of the Cartesian view, shape ``(4, 4)``.
+
+        For a state drawn from ``N(mean, cov)`` this is
+
+        ``E[(to_cartesian(x) - to_cartesian(mean)) (...).T]``,
+
+        which is the second moment of the error a Cartesian comparison actually
+        makes, taken about the estimate that comparison actually reports. It is
+        the quantity a Cartesian normalised estimation error squared has to be
+        normalised by if the statistic is to have expectation four.
+
+        This is deliberately not ``J P J.T``. That product is the first-order
+        approximation to it and is exact only when ``to_cartesian`` is linear.
+        Each model returns the closed form for its own view.
+        """
 
     def from_cartesian(self, cartesian: FloatArray) -> FloatArray:
         """Best-effort inverse of ``to_cartesian``, used to seed a filter."""
@@ -235,6 +254,11 @@ class ConstantVelocity:
         del state
         return np.eye(4, dtype=np.float64)
 
+    def cartesian_moment(self, mean: FloatArray, cov: FloatArray) -> FloatArray:
+        """Return ``cov``; the Cartesian view is the identity, so nothing is lost."""
+        del mean
+        return np.array(cov, dtype=np.float64, copy=True)
+
     def from_cartesian(self, cartesian: FloatArray) -> FloatArray:
         """Return the Cartesian vector unchanged."""
         return np.array(cartesian, dtype=np.float64, copy=True)
@@ -345,6 +369,11 @@ class ConstantAcceleration:
         matrix = np.zeros((4, 6), dtype=np.float64)
         matrix[:4, :4] = np.eye(4, dtype=np.float64)
         return matrix
+
+    def cartesian_moment(self, mean: FloatArray, cov: FloatArray) -> FloatArray:
+        """Return the leading block of ``cov``; the view is a linear selection."""
+        del mean
+        return np.array(np.asarray(cov, dtype=np.float64)[:4, :4], dtype=np.float64, copy=True)
 
     def from_cartesian(self, cartesian: FloatArray) -> FloatArray:
         """Seed position and velocity from ``cartesian`` and zero the acceleration."""
@@ -573,6 +602,80 @@ class ConstantTurnRate:
         matrix[3, CTRV_SPEED] = sin_heading
         matrix[3, CTRV_HEADING] = speed * cos_heading
         return matrix
+
+    def cartesian_moment(self, mean: FloatArray, cov: FloatArray) -> FloatArray:
+        """Return the exact Cartesian second moment in closed form.
+
+        Only the speed and the heading are transformed, through
+        ``vx + i * vy = v * exp(i * psi)``. Writing that product as a single
+        complex variable ``w`` turns every entry of the answer into an
+        expectation of the form ``E[X * exp(i * theta * psi)]`` for jointly
+        Gaussian ``X`` and ``psi``, and those have closed forms:
+
+        ``E[X exp(i t b)] = exp(-t**2 s**2 / 2) * (i t c)``
+        ``E[X Y exp(i t b)] = exp(-t**2 s**2 / 2) * (cov(X, Y) - t**2 c_X c_Y)``
+
+        with ``b`` the zero-mean part of the heading, ``s**2`` its variance, and
+        ``c`` the covariance of the named variable with it. Both follow from
+        differentiating the joint moment generating function twice at the origin.
+
+        The result is the covariance of ``to_cartesian(x) - to_cartesian(mean)``,
+        not of ``to_cartesian(x)`` about its own mean. The two differ by the
+        outer product of the bias the curvature introduces, and it is the first
+        that a Cartesian error is measured against, since the estimate reported
+        to the caller is ``to_cartesian(mean)``.
+
+        Nothing here needs a small-angle branch or a linearisation, and the
+        expression is exact for any heading variance, not only a small one. The
+        test suite checks it against a Monte Carlo projection at a heading
+        standard deviation where the Jacobian projection is visibly wrong.
+        """
+        values = np.asarray(mean, dtype=np.float64)
+        matrix = np.asarray(cov, dtype=np.float64)
+        speed = float(values[CTRV_SPEED])
+        heading = float(values[CTRV_HEADING])
+
+        speed_var = float(matrix[CTRV_SPEED, CTRV_SPEED])
+        heading_var = float(matrix[CTRV_HEADING, CTRV_HEADING])
+        speed_heading = float(matrix[CTRV_SPEED, CTRV_HEADING])
+
+        rotation = complex(math.cos(heading), math.sin(heading))
+        reported = speed * rotation
+        # E[w], E[w**2], and E[|w|**2] for w = v * exp(i * psi).
+        first = math.exp(-0.5 * heading_var) * complex(speed, speed_heading) * rotation
+        second = (
+            math.exp(-2.0 * heading_var)
+            * (complex(speed, 2.0 * speed_heading) ** 2 + speed_var)
+            * rotation**2
+        )
+        magnitude = speed * speed + speed_var
+
+        # Moments of the velocity error u = w - reported.
+        squared_magnitude = (
+            magnitude - 2.0 * (reported.conjugate() * first).real + abs(reported) ** 2
+        )
+        squared = second - 2.0 * reported * first + reported**2
+
+        result = np.zeros((4, 4), dtype=np.float64)
+        result[:2, :2] = matrix[:2, :2]
+        result[2, 2] = 0.5 * (squared_magnitude + squared.real)
+        result[3, 3] = 0.5 * (squared_magnitude - squared.real)
+        result[2, 3] = result[3, 2] = 0.5 * squared.imag
+
+        for axis in (CTRV_POSITION_X, CTRV_POSITION_Y):
+            position_speed = float(matrix[axis, CTRV_SPEED])
+            position_heading = float(matrix[axis, CTRV_HEADING])
+            cross = (
+                math.exp(-0.5 * heading_var)
+                * complex(
+                    position_speed - position_heading * speed_heading,
+                    speed * position_heading,
+                )
+                * rotation
+            )
+            result[axis, 2] = result[2, axis] = cross.real
+            result[axis, 3] = result[3, axis] = cross.imag
+        return result
 
     def from_cartesian(self, cartesian: FloatArray) -> FloatArray:
         """Convert ``[px, py, vx, vy]`` to CTRV with a zero yaw rate."""

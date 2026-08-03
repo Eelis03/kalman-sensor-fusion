@@ -74,9 +74,11 @@ class StepRecord:
     state space, and is ``nan`` unless the filter's motion model compares equal
     to the model that generated the truth, process noise parameters included.
     ``nees_cartesian`` is always defined and is computed on the Cartesian view,
-    using the first-order projection of the covariance; for a nonlinear motion
-    model that projection is an approximation, which is why the native statistic
-    is kept separate.
+    whose covariance comes from the sigma point projection in
+    :func:`sensor_fusion.pipeline.fusion.cartesian_moment`. That projection is
+    exact for a linear Cartesian view and carries no Jacobian linearisation for a
+    nonlinear one. The native statistic is still reported separately, because it
+    tests the filter in the space the filter actually works in.
     """
 
     time: float

@@ -56,10 +56,13 @@ def assess(result: MonteCarloResult, confidence: float = 0.95) -> FilterAssessme
     """Build the consistency assessment for one Monte Carlo result.
 
     The NEES statistic is taken in the filter's own state space when the filter's
-    motion model generated the truth, because that comparison is exact. When the
-    models differ the Cartesian projection is used instead, and the statistic is
-    labelled accordingly so that no reader mistakes an approximation for an exact
-    test.
+    motion model generated the truth, because the chi-square assumptions hold
+    there without any projection at all. When the models differ there is no
+    common state space and the Cartesian view is used instead, with its second
+    moment taken by the sigma point projection in
+    :func:`sensor_fusion.pipeline.fusion.cartesian_moment`. The statistic is
+    labelled with the space it was taken in, because the degrees of freedom
+    differ between the two.
     """
     if result.native_nees_available:
         nees_samples = result.nees_state

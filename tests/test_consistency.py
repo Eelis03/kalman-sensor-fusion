@@ -111,6 +111,43 @@ class TestVerdicts:
             consistency_report("synthetic", np.zeros(10), dof=4)
 
 
+class TestTransientAgainstPersistentError:
+    """Separating a filter that converges badly from one that is simply wrong.
+
+    Two filters can share a grand mean and mean opposite things by it: one whose
+    covariance is wrong for the first fraction of a second while it converges
+    from a loose prior, and one whose covariance is mildly wrong throughout. The
+    fraction of steps above the upper bound tells them apart, and nothing is
+    trimmed from the mean, because a filter that needs a second before its
+    covariance can be trusted has a property worth reporting.
+    """
+
+    def test_a_short_transient_leaves_most_steps_inside(self) -> None:
+        """A filter wrong only while converging is above the bound only then."""
+        samples = np.full((30, 50), 4.0)
+        samples[:, :6] = 40.0
+        report = consistency_report("synthetic", samples, dof=4)
+        assert report.above_fraction == pytest.approx(6 / 50)
+        assert report.inside_fraction == pytest.approx(44 / 50)
+        assert report.verdict is Verdict.OPTIMISTIC, "the transient still counts in the mean"
+
+    def test_a_persistent_error_is_above_the_bound_throughout(self) -> None:
+        """The same verdict, reached a completely different way."""
+        report = consistency_report("synthetic", np.full((30, 50), 7.0), dof=4)
+        assert report.above_fraction == pytest.approx(1.0)
+        assert report.verdict is Verdict.OPTIMISTIC
+
+    def test_the_two_can_share_a_grand_mean(self) -> None:
+        """Guard the guard: the mean alone genuinely cannot separate these cases."""
+        transient = np.full((30, 50), 4.0)
+        transient[:, :6] = 29.0
+        persistent = np.full((30, 50), 7.0)
+        left = consistency_report("transient", transient, dof=4)
+        right = consistency_report("persistent", persistent, dof=4)
+        assert left.mean == pytest.approx(right.mean, rel=1e-9)
+        assert left.above_fraction < 0.2 < right.above_fraction
+
+
 class TestCorrectlySpecifiedFilters:
     """A correctly specified filter must land inside the chi-square bounds."""
 
