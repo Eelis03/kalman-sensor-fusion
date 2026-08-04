@@ -32,7 +32,7 @@ from sensor_fusion.pipeline.scenarios import (
     with_latency,
 )
 from sensor_fusion.pipeline.simulator import Scenario, ScenarioConfig, simulate
-from sensor_fusion.pipeline.trace import OutOfOrderPolicy
+from sensor_fusion.pipeline.trace import FilterTrace, OutOfOrderPolicy
 
 
 def _delayed_pair() -> tuple[Scenario, Scenario]:
@@ -258,6 +258,36 @@ class TestOutOfOrderPolicies:
                 FusionSettings(sensors=(name,)),
             )
             assert trace.sensor_names == (name,)
+
+
+class TestNormalizedInnovations:
+    """The innovation scaled to unit covariance, recorded alongside its own norm."""
+
+    @staticmethod
+    def _trace() -> FilterTrace:
+        scenario = simulate(turning_target(steps=800), seed=13)
+        return run_filter(
+            UnscentedKalmanFilter(scenario.config.truth_model),
+            scenario,
+            matched_belief(scenario),
+        )
+
+    def test_the_squared_norm_reproduces_the_recorded_nis(self) -> None:
+        """``L**-1 nu`` squared is ``nu.T inv(S) nu`` by construction, and must stay so.
+
+        The scalar and the vector are two views of the same quantity. Recording
+        them separately is only safe while they agree, since the whiteness test
+        reads the vector and every consistency verdict reads the scalar.
+        """
+        for record in self._trace().records:
+            normalized = record.normalized_innovation
+            assert float(normalized @ normalized) == pytest.approx(record.nis, rel=1e-9)
+
+    def test_each_sensor_stack_carries_its_own_dimension(self) -> None:
+        """Lidar reports two numbers and radar three, so the stacks differ in width."""
+        trace = self._trace()
+        for name, dim in (("lidar", 2), ("radar", 3)):
+            assert trace.normalized_innovations(name).shape == (len(trace.nis(name)), dim)
 
 
 class TestInitialUncertainty:

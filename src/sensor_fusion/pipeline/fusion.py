@@ -21,7 +21,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from sensor_fusion._types import FloatArray
-from sensor_fusion.algorithm.base import GaussianState, StateEstimator
+from sensor_fusion.algorithm.base import GaussianState, StateEstimator, safe_cholesky
 from sensor_fusion.model.angles import wrap_to_pi
 from sensor_fusion.model.motion import (
     ConstantAcceleration,
@@ -157,6 +157,19 @@ def _native_nees(
     return float(error @ np.linalg.solve(cov, error))
 
 
+def _normalize_innovation(innovation: FloatArray, innovation_cov: FloatArray) -> FloatArray:
+    """Return the innovation scaled to unit covariance, ``inv(L) @ innovation``.
+
+    The squared norm of the result is the normalised innovation squared, so this
+    is the quantity the consistency machinery already reduces to a scalar, kept
+    as a vector instead. Keeping the vector is what lets the whiteness test
+    correlate one update against the next without the components of a polar
+    measurement carrying weights set by the units it was written in.
+    """
+    factor = safe_cholesky(innovation_cov)
+    return np.asarray(np.linalg.solve(factor, innovation), dtype=np.float64)
+
+
 def _cartesian_nees(
     model: MotionModel, mean: FloatArray, cov: FloatArray, truth_cartesian: FloatArray
 ) -> tuple[FloatArray, float]:
@@ -233,6 +246,9 @@ def run_filter(
                 mean=state.mean,
                 cov=state.cov,
                 innovation=result.innovation,
+                normalized_innovation=_normalize_innovation(
+                    result.innovation, result.innovation_cov
+                ),
                 nis=result.nis,
                 nis_dof=measurement.sensor.dim,
                 truth_cartesian=np.asarray(truth_cartesian, dtype=np.float64),

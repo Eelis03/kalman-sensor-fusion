@@ -168,6 +168,41 @@ position error is only 0.3606 m, but its velocity RMSE is 5.5953 m/s against
 0.5016 m/s for the correctly specified filter, because it throws away almost
 everything it has learned at every step.
 
+Magnitude is not the only thing that can be wrong with an innovation. A residual
+can be the right size and still be predictable, and a filter whose consecutive
+innovations correlate is leaving structure that a better model would have
+removed. The same script prints the time-average autocorrelation of each
+sensor's innovations, scaled to unit covariance first so that the radar's metres
+and radians carry equal weight, against the two-sided bound for a white sequence
+corrected for the three lags tested. Like NIS, it needs no ground truth.
+
+| Filter | Sensor | Largest correlation | At lag | Bound | Verdict |
+| --- | --- | --- | --- | --- | --- |
+| CTRV, correctly specified | lidar | -0.0095 | 2 | 0.0220 | white |
+| CTRV, correctly specified | radar | +0.0110 | 1 | 0.0155 | white |
+| CV, spectral density 2 | lidar | +0.4483 | 3 | 0.0221 | correlated |
+| CV, spectral density 2 | radar | +0.3239 | 3 | 0.0156 | correlated |
+| CV, spectral density 0.05 | lidar | +0.9654 | 1 | 0.0219 | correlated |
+| CV, spectral density 0.05 | radar | +0.9301 | 1 | 0.0155 | correlated |
+| CV, spectral density 4000 | lidar | -0.1387 | 1 | 0.0219 | correlated |
+| CV, spectral density 4000 | radar | -0.0114 | 1 | 0.0155 | white |
+
+The correctly specified filter is white on both sensors, which is again the
+calibration the rest of the table is read against. The two starved filters are
+correlated and positively so, which is what an unmodelled turn looks like: the
+part of the motion the model omits does not change between one update and the
+next, so neither does the residual it leaves.
+
+The last two rows are the ones a magnitude test cannot produce. The flooded
+filter is classified conservative by NEES and by both NIS statistics, all saying
+the same thing in the same direction, and its lidar innovations are correlated at
+-0.1387 against a bound of 0.0219. The sign is the finding. A filter assuming a
+spectral density of 4000 takes each measurement at close to face value, so the
+noise it absorbs at one update returns with the opposite sign in the next
+innovation, and the first difference of a white sequence is not white. Optimistic
+and conservative are the two things a magnitude test can say. Overcorrection is a
+third, and this is the statistic that says it.
+
 NIS and NEES are both reported because they answer different questions. NIS needs
 no ground truth and can therefore be computed against a live sensor feed; it only
 tests the filter against its own predictions. NEES needs ground truth and is
@@ -327,7 +362,7 @@ Line coverage is 98 percent. Continuous integration enforces a floor of 96, whic
 is the measured value rounded down and reduced by two, so that a refactor does
 not fail the build while a module arriving with no tests at all does.
 
-The suite has 211 tests and runs in about 25 seconds. Two of them are skipped by
+The suite has 223 tests and runs in about 30 seconds. Two of them are skipped by
 declaration, both because they assert a property only a linear model can have. It
 is built in three tiers. Tier one covers the mathematics: both nonlinear filters
 against the exact Kalman filter on a linear Gaussian problem, every analytic
@@ -335,7 +370,9 @@ Jacobian against a central finite difference, the unscented transform against th
 mean of a quadratic form that a linearisation misses by construction, every
 covariance for symmetry and positive semi-definiteness through every step, the
 closed-form Cartesian second moment against a 400000 sample Monte Carlo
-projection, and a correctly specified filter against its chi-square bounds. Angle
+projection, a correctly specified filter against its chi-square bounds, and that
+same filter's innovations against the whiteness bound with a constant velocity
+filter on the turning target as the control that the test can fire at all. Angle
 wrapping is exercised by a target whose bearing and heading both cross the plus
 or minus pi cut, with a negative control that replaces the wrapped residual by a
 plain subtraction and asserts that the same run then goes visibly wrong.
@@ -374,7 +411,7 @@ and differentiable as the yaw rate passes through zero.
 | `model/` | Angle wrapping, the three motion models with their Jacobians and closed-form noise factors, and the lidar and radar measurement models with angle-aware residuals |
 | `algorithm/` | The `StateEstimator` Protocol, `GaussianState`, shared numerical helpers, the three filters, and the scaled unscented transform |
 | `pipeline/` | Ground truth and measurement generation on independent random streams, the named scenarios, asynchronous sequential fusion with the out-of-order policies, the Monte Carlo harness, and the structured record of a run |
-| `analysis/` | NIS, NEES, chi-square intervals, verdicts, and figures |
+| `analysis/` | NIS, NEES, innovation whiteness, chi-square intervals, verdicts, and figures |
 | `examples/` | Thin wiring scripts with no logic of their own |
 
 The dependency direction is one way: `model` knows nothing of anything else,
