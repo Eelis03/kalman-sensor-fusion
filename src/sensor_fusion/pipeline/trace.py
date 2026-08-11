@@ -79,6 +79,15 @@ class StepRecord:
     exact for a linear Cartesian view and carries no Jacobian linearisation for a
     nonlinear one. The native statistic is still reported separately, because it
     tests the filter in the space the filter actually works in.
+
+    ``normalized_innovation`` is the innovation scaled to unit covariance,
+    ``inv(L) @ innovation`` for the Cholesky factor ``L`` of the innovation
+    covariance, so its squared norm is exactly ``nis``. It is recorded as well as
+    that scalar because the whiteness test in
+    :mod:`sensor_fusion.analysis.whiteness` correlates one update against
+    another, which needs the vector and needs its components to be dimensionless:
+    an inner product of raw radar innovations would add square metres to square
+    radians.
     """
 
     time: float
@@ -86,6 +95,7 @@ class StepRecord:
     mean: FloatArray
     cov: FloatArray
     innovation: FloatArray
+    normalized_innovation: FloatArray
     nis: float
     nis_dof: int
     truth_cartesian: FloatArray
@@ -141,6 +151,17 @@ class FilterTrace:
         """Per-update normalised innovation squared for one sensor."""
         return np.array(
             [record.nis for record in self.records if record.sensor_name == sensor_name],
+            dtype=np.float64,
+        )
+
+    def normalized_innovations(self, sensor_name: str) -> FloatArray:
+        """Per-update unit-covariance innovations for one sensor, shape ``(n, dim)``."""
+        return np.array(
+            [
+                record.normalized_innovation
+                for record in self.records
+                if record.sensor_name == sensor_name
+            ],
             dtype=np.float64,
         )
 

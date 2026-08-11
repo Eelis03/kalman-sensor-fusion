@@ -19,6 +19,7 @@ from sensor_fusion.algorithm.ukf import UnscentedKalmanFilter
 from sensor_fusion.analysis.consistency import Verdict, chi2_interval, consistency_report
 from sensor_fusion.analysis.metrics import rmse, summarize
 from sensor_fusion.analysis.report import FilterAssessment, assess
+from sensor_fusion.analysis.whiteness import Whiteness, whiteness_report
 from sensor_fusion.model.motion import ConstantVelocity
 from sensor_fusion.pipeline.fusion import (
     FusionSettings,
@@ -148,6 +149,69 @@ class TestTransientAgainstPersistentError:
         assert left.above_fraction < 0.2 < right.above_fraction
 
 
+class TestWhitenessStatistic:
+    """The lagged autocorrelation of the innovations and the bound it is read against."""
+
+    def test_independent_samples_are_white(self) -> None:
+        """A stack of independent standard normals carries no lagged correlation."""
+        rng = np.random.default_rng(5)
+        report = whiteness_report("synthetic", rng.standard_normal((40, 120, 2)))
+        assert report.verdict is Whiteness.WHITE
+        assert max(abs(value) for value in report.correlations) < min(report.bounds)
+
+    def test_a_held_innovation_is_correlated(self) -> None:
+        """Repeating each innovation for two steps puts half the energy at lag one."""
+        rng = np.random.default_rng(6)
+        samples = np.repeat(rng.standard_normal((40, 60, 2)), 2, axis=1)
+        report = whiteness_report("synthetic", samples)
+        assert report.verdict is Whiteness.CORRELATED
+        assert report.correlations[0] == pytest.approx(0.5, abs=0.05)
+
+    def test_the_bound_tightens_with_more_runs(self) -> None:
+        """The standard error falls as one over the square root of the sample count."""
+        rng = np.random.default_rng(7)
+        small = whiteness_report("synthetic", rng.standard_normal((10, 50, 2)), lags=(1,))
+        large = whiteness_report("synthetic", rng.standard_normal((40, 50, 2)), lags=(1,))
+        assert large.bounds[0] == pytest.approx(small.bounds[0] / 2.0, rel=1e-12)
+
+    def test_the_bound_is_corrected_for_the_number_of_lags(self) -> None:
+        """Testing three lags at once widens the bound each one is read against."""
+        rng = np.random.default_rng(8)
+        samples = rng.standard_normal((20, 80, 3))
+        one = whiteness_report("synthetic", samples, lags=(1,))
+        three = whiteness_report("synthetic", samples, lags=(1, 2, 3))
+        assert three.bounds[0] > one.bounds[0]
+        assert three.correlations[0] == pytest.approx(one.correlations[0], rel=1e-12)
+
+    def test_a_perfectly_alternating_sequence_saturates_lag_one(self) -> None:
+        """The extreme case is reported at the lag that is furthest outside its bound."""
+        samples = np.zeros((8, 40, 1))
+        samples[:, ::2, 0] = 1.0
+        samples[:, 1::2, 0] = -1.0
+        report = whiteness_report("synthetic", samples)
+        assert report.correlations[0] == pytest.approx(-1.0, rel=1e-12)
+        assert "at lag 1" in report.summary()
+        assert report.verdict.value in report.summary()
+
+    def test_an_all_zero_stack_is_refused(self) -> None:
+        """A zero denominator would return nan, which reads as a clean pass."""
+        with pytest.raises(ValueError, match="identically zero"):
+            whiteness_report("synthetic", np.zeros((4, 20, 2)))
+
+    def test_invalid_arguments_are_rejected(self) -> None:
+        """Shape, lags, and confidence are validated before anything is computed."""
+        rng = np.random.default_rng(9)
+        samples = rng.standard_normal((6, 12, 2))
+        with pytest.raises(ValueError, match="runs, steps, dim"):
+            whiteness_report("synthetic", samples[0])
+        with pytest.raises(ValueError, match="at least one lag"):
+            whiteness_report("synthetic", samples, lags=())
+        with pytest.raises(ValueError, match="every lag"):
+            whiteness_report("synthetic", samples, lags=(1, 12))
+        with pytest.raises(ValueError, match="confidence"):
+            whiteness_report("synthetic", samples, confidence=0.0)
+
+
 class TestCorrectlySpecifiedFilters:
     """A correctly specified filter must land inside the chi-square bounds."""
 
@@ -204,6 +268,48 @@ class TestMisspecifiedFilters:
         """Mis-specified runs are labelled as using the projected statistic."""
         assessment = self._campaign(0.05, runs=6)
         assert "Cartesian projection" in assessment.nees.statistic
+
+
+class TestInnovationWhiteness:
+    """Whiteness on real runs, which asks the question the magnitude test does not.
+
+    A magnitude test asks whether the covariance is the right size. It stays
+    silent when consecutive innovations are related to one another, and a filter
+    whose innovations are related is leaving structure it could have predicted.
+    """
+
+    def test_a_correctly_specified_filter_is_white(self) -> None:
+        """A filter using the model that generated the truth has nothing left over."""
+        result = run_monte_carlo(turning_target(steps=STEPS), _matched_ukf, runs=RUNS, seed=SEED)
+        for name in sorted(result.nis):
+            report = whiteness_report(name, result.normalized_innovations[name])
+            assert report.verdict is Whiteness.WHITE, report.summary()
+
+    def test_a_mis_specified_motion_model_leaves_correlated_innovations(self) -> None:
+        """A constant velocity filter cannot predict a turn, and it shows at lag one.
+
+        This is the campaign the magnitude test also catches, so the two agree
+        here. What matters is the sign: the unmodelled turn persists over several
+        updates, so the residual it leaves is positively correlated rather than
+        merely large.
+        """
+        seeder = InitialUncertainty()
+
+        def build(scenario: Scenario) -> tuple[StateEstimator, GaussianState]:
+            model = ConstantVelocity(spectral_density=2.0)
+            return UnscentedKalmanFilter(model), seeder.build(model, scenario.truth_cartesian[0])
+
+        result = run_monte_carlo(turning_target(steps=STEPS), build, runs=RUNS, seed=SEED)
+        report = whiteness_report("lidar", result.normalized_innovations["lidar"])
+        assert report.verdict is Whiteness.CORRELATED
+        assert report.correlations[0] > report.bounds[0]
+
+    def test_the_harness_stacks_innovations_with_the_sensor_dimension(self) -> None:
+        """Each sensor is stacked as ``(runs, steps, dim)`` at its own dimension."""
+        result = run_monte_carlo(turning_target(steps=400), _matched_ukf, runs=4, seed=SEED)
+        for name, dim in (("lidar", 2), ("radar", 3)):
+            stacked = result.normalized_innovations[name]
+            assert stacked.shape == (4, result.nis[name].shape[1], dim)
 
 
 class TestMonteCarloHarness:

@@ -14,15 +14,25 @@ from sensor_fusion.analysis.consistency import (
 )
 from sensor_fusion.analysis.metrics import ErrorSummary, rmse, summarize
 from sensor_fusion.analysis.report import FilterAssessment, assess
+from sensor_fusion.analysis.whiteness import (
+    DEFAULT_LAGS,
+    Whiteness,
+    WhitenessReport,
+    whiteness_report,
+)
 
 __all__ = [
+    "DEFAULT_LAGS",
     "ConsistencyReport",
     "ErrorSummary",
     "FilterAssessment",
     "Verdict",
+    "Whiteness",
+    "WhitenessReport",
     "assess",
     "chi2_interval",
     "consistency_report",
     "rmse",
     "summarize",
+    "whiteness_report",
 ]

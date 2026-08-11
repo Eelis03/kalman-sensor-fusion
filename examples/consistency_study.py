@@ -17,6 +17,12 @@ alarming and its track looks reasonable, but its covariance is wrong by roughly 
 factor of two in NEES. That is the failure a root mean square error comparison
 cannot see and a consistency test can.
 
+Each campaign also reports the whiteness of its innovations, which asks a
+question no magnitude statistic answers: whether one innovation predicts the
+next. The flooded filter is the case to read there, because every magnitude
+statistic it produces says conservative and only the sign of its correlation says
+that it is overcorrecting.
+
     uv run python examples/consistency_study.py
     uv run python examples/consistency_study.py --quick
 """
@@ -30,6 +36,7 @@ from sensor_fusion.algorithm import GaussianState, StateEstimator, UnscentedKalm
 from sensor_fusion.analysis.consistency import ConsistencyReport
 from sensor_fusion.analysis.figures import consistency_figure
 from sensor_fusion.analysis.report import assess
+from sensor_fusion.analysis.whiteness import whiteness_report
 from sensor_fusion.model.motion import ConstantVelocity
 from sensor_fusion.pipeline.fusion import InitialUncertainty, matched_belief
 from sensor_fusion.pipeline.montecarlo import MonteCarloResult, run_monte_carlo
@@ -96,6 +103,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n{title}")
         for line in assessment.lines():
             print("  " + line)
+        for name in sorted(result.normalized_innovations):
+            print("  " + whiteness_report(name, result.normalized_innovations[name]).summary())
         figures.append((result, (assessment.nees, *assessment.nis)))
 
     args.outdir.mkdir(parents=True, exist_ok=True)

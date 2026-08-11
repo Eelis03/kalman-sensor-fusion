@@ -181,6 +181,45 @@ would be wrong in both directions at once. A run whose time-averaged NEES exceed
 ten times its degrees of freedom is counted as a lost track and reported
 separately, so the count and the median together say what the mean cannot.
 
+### Innovation whiteness
+
+NIS and NEES both test a magnitude. Neither notices that one innovation predicts
+the next, and a residual can be correctly sized and still be predictable. The
+third test in Bar-Shalom, Li, and Kirubarajan (2001) section 5.4 is therefore the
+time-average autocorrelation of the innovations, which is implemented in
+`analysis/whiteness.py` and reported by `examples/consistency_study.py`.
+
+The innovations are scaled to unit covariance before they are correlated, which
+is why `StepRecord` carries the vector `inv(L) @ innovation` alongside the scalar
+NIS whose value is its squared norm. Two things follow from that choice. The
+inner product of two raw radar innovations would add square metres to square
+radians, so the weight each component carried in the statistic would be set by
+the units the sensor was written in rather than by anything about the filter.
+And once every component has unit variance under the null, the correlation
+formed from `runs * (steps - lag) * dim` scalar products has standard error
+`1 / sqrt(runs * (steps - lag) * dim)` exactly, rather than an effective sample
+size that depends on the ratio of the innovation covariance's eigenvalues.
+
+Three lags are tested by default and each bound carries a Bonferroni correction
+for their number, because three lags read at 95 percent each would reject a
+genuinely white sequence about one time in seven. The lags are not independent,
+so the correction is conservative, in the same direction as the interval above.
+The two-sided normal quantile behind the bound is taken as the square root of the
+chi-square quantile with one degree of freedom, since the square of a standard
+normal is exactly that variable. That is not a shortcut for its own sake: it
+keeps this package's dependency on `scipy.stats` at the one function it already
+needed.
+
+The measured result that justifies the test is the flooded filter, at a spectral
+density of 4000. Every magnitude statistic it produces says conservative, and
+that is all they can say. Its lidar innovations are correlated at -0.1387 against
+a bound of 0.0219, and the sign says what the magnitude cannot: a filter that
+takes each measurement at close to face value returns the noise it absorbed at
+one update in the next innovation with the opposite sign, and the first
+difference of a white sequence is not white. The correctly specified filter is
+white on both sensors on the same run, so the statistic is not simply firing on
+everything.
+
 ### Asynchronous fusion
 
 Sensors are fused sequentially: each report is applied on its own as soon as it

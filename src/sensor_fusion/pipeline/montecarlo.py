@@ -44,6 +44,7 @@ class MonteCarloResult:
     nis: dict[str, FloatArray]
     nis_times: dict[str, FloatArray]
     nis_dof: dict[str, int]
+    normalized_innovations: dict[str, FloatArray]
     position_rmse: FloatArray
     velocity_rmse: FloatArray
 
@@ -99,6 +100,11 @@ def run_monte_carlo(
     nis: dict[str, FloatArray] = {}
     nis_times: dict[str, FloatArray] = {}
     nis_dof: dict[str, int] = {}
+    # Shape ``(runs, steps, dim)`` per sensor. The innovations are kept as
+    # vectors as well as reduced to their NIS because the whiteness test in the
+    # analysis layer correlates one update against another, which the scalar
+    # cannot answer.
+    normalized: dict[str, FloatArray] = {}
     for name in sensor_names:
         reference_times = first.nis_times(name)
         for trace in traces[1:]:
@@ -108,6 +114,7 @@ def run_monte_carlo(
         nis_dof[name] = next(
             record.nis_dof for record in first.records if record.sensor_name == name
         )
+        normalized[name] = np.stack([trace.normalized_innovations(name) for trace in traces])
 
     return MonteCarloResult(
         filter_name=first.filter_name,
@@ -120,6 +127,7 @@ def run_monte_carlo(
         nis=nis,
         nis_times=nis_times,
         nis_dof=nis_dof,
+        normalized_innovations=normalized,
         position_rmse=np.array([rmse(trace.position_error) for trace in traces]),
         velocity_rmse=np.array([rmse(trace.velocity_error) for trace in traces]),
     )
