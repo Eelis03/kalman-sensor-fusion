@@ -98,9 +98,7 @@ class InitialUncertainty:
             ]
         else:  # pragma: no cover - defensive, no other model exists
             raise TypeError(f"no initial uncertainty defined for {model.name}")
-        return GaussianState(
-            mean=mean, cov=np.diag(np.asarray(deviations, dtype=np.float64) ** 2)
-        )
+        return GaussianState(mean=mean, cov=np.diag(np.asarray(deviations, dtype=np.float64) ** 2))
 
 
 def matched_belief(scenario: Scenario) -> GaussianState:
@@ -148,9 +146,7 @@ def _release_order(
     return tuple(released), inversions
 
 
-def _native_nees(
-    model: MotionModel, mean: FloatArray, cov: FloatArray, truth: FloatArray
-) -> float:
+def _native_nees(model: MotionModel, mean: FloatArray, cov: FloatArray, truth: FloatArray) -> float:
     error = np.asarray(truth, dtype=np.float64) - np.asarray(mean, dtype=np.float64)
     for index in model.angle_indices:
         error[index] = float(wrap_to_pi(np.asarray([error[index]]))[0])

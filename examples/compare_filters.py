@@ -129,8 +129,10 @@ def main(argv: list[str] | None = None) -> int:
             float(np.max(np.abs(left.cov - right.cov)))
             for left, right in zip(exact.records, trace.records, strict=True)
         )
-        print(f"  {label}: largest mean difference {mean_gap:.3e}, "
-              f"largest covariance difference {cov_gap:.3e}")
+        print(
+            f"  {label}: largest mean difference {mean_gap:.3e}, "
+            f"largest covariance difference {cov_gap:.3e}"
+        )
 
     scenario = simulate(config, seed=args.seed)
     traces = []

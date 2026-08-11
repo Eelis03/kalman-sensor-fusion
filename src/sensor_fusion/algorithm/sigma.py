@@ -158,11 +158,7 @@ def unscented_residuals(
     return np.asarray(residuals, dtype=np.float64)
 
 
-def unscented_covariance(
-    left: FloatArray, right: FloatArray, weights: FloatArray
-) -> FloatArray:
+def unscented_covariance(left: FloatArray, right: FloatArray, weights: FloatArray) -> FloatArray:
     """Return the weighted sum of outer products of matching residual rows."""
-    weighted = np.asarray(weights, dtype=np.float64)[:, None] * np.asarray(
-        left, dtype=np.float64
-    )
+    weighted = np.asarray(weights, dtype=np.float64)[:, None] * np.asarray(left, dtype=np.float64)
     return np.asarray(weighted.T @ np.asarray(right, dtype=np.float64), dtype=np.float64)

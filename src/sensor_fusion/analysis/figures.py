@@ -123,9 +123,7 @@ def nees_panels_figure(
     panels = len(results)
     figure, axes = plt.subplots(panels, 1, figsize=figsize, squeeze=False, sharex=True)
     column = axes[:, 0]
-    for index, (result, report, label) in enumerate(
-        zip(results, reports, labels, strict=True)
-    ):
+    for index, (result, report, label) in enumerate(zip(results, reports, labels, strict=True)):
         axis = column[index]
         _draw_bounds(axis, report)
         _draw_nees(axis, result.times, _nees_samples(result), report, label, f"C{index}")
@@ -172,9 +170,7 @@ def nees_comparison_figure(
 
     figure, axes = plt.subplots(figsize=figsize)
     _draw_bounds(axes, reports[0])
-    for index, (result, report, label) in enumerate(
-        zip(results, reports, labels, strict=True)
-    ):
+    for index, (result, report, label) in enumerate(zip(results, reports, labels, strict=True)):
         _draw_nees(
             axes,
             result.times,
@@ -215,9 +211,7 @@ def error_figure(traces: Sequence[FilterTrace], labels: Sequence[str]) -> Figure
     return figure
 
 
-def consistency_figure(
-    result: MonteCarloResult, reports: Sequence[ConsistencyReport]
-) -> Figure:
+def consistency_figure(result: MonteCarloResult, reports: Sequence[ConsistencyReport]) -> Figure:
     """Plot the across-run average of each consistency statistic with its bounds."""
     panels = 1 + len(result.nis)
     figure, axes = plt.subplots(panels, 1, figsize=(8.0, 2.4 * panels), squeeze=False)

@@ -201,9 +201,7 @@ class TestOutOfOrderPolicies:
         plain, delayed = _delayed_pair()
         model = plain.config.truth_model
         settings = FusionSettings(OutOfOrderPolicy.BUFFER, latency_budget=0.15)
-        reference = run_filter(
-            UnscentedKalmanFilter(model), plain, matched_belief(plain), settings
-        )
+        reference = run_filter(UnscentedKalmanFilter(model), plain, matched_belief(plain), settings)
         reordered = run_filter(
             UnscentedKalmanFilter(model), delayed, matched_belief(delayed), settings
         )

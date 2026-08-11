@@ -84,9 +84,7 @@ class ExtendedKalmanFilter:
         mean = self.motion_model.normalize(state.mean + gain @ innovation)
         identity = np.eye(state.dim, dtype=np.float64)
         closed_loop = identity - gain @ observation_matrix
-        cov = symmetrize(
-            closed_loop @ state.cov @ closed_loop.T + gain @ sensor.noise_cov @ gain.T
-        )
+        cov = symmetrize(closed_loop @ state.cov @ closed_loop.T + gain @ sensor.noise_cov @ gain.T)
         nis = float(innovation @ np.linalg.solve(innovation_cov, innovation))
         return UpdateResult(
             state=GaussianState(mean=mean, cov=cov),
