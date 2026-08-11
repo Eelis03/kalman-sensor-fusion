@@ -280,9 +280,7 @@ class TestInnovationWhiteness:
 
     def test_a_correctly_specified_filter_is_white(self) -> None:
         """A filter using the model that generated the truth has nothing left over."""
-        result = run_monte_carlo(
-            turning_target(steps=STEPS), _matched_ukf, runs=RUNS, seed=SEED
-        )
+        result = run_monte_carlo(turning_target(steps=STEPS), _matched_ukf, runs=RUNS, seed=SEED)
         for name in sorted(result.nis):
             report = whiteness_report(name, result.normalized_innovations[name])
             assert report.verdict is Whiteness.WHITE, report.summary()
@@ -299,9 +297,7 @@ class TestInnovationWhiteness:
 
         def build(scenario: Scenario) -> tuple[StateEstimator, GaussianState]:
             model = ConstantVelocity(spectral_density=2.0)
-            return UnscentedKalmanFilter(model), seeder.build(
-                model, scenario.truth_cartesian[0]
-            )
+            return UnscentedKalmanFilter(model), seeder.build(model, scenario.truth_cartesian[0])
 
         result = run_monte_carlo(turning_target(steps=STEPS), build, runs=RUNS, seed=SEED)
         report = whiteness_report("lidar", result.normalized_innovations["lidar"])

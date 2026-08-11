@@ -91,8 +91,7 @@ class WhitenessReport:
         lag, because a longer lag leaves fewer pairs to average.
         """
         ratios = [
-            abs(value) / bound
-            for value, bound in zip(self.correlations, self.bounds, strict=True)
+            abs(value) / bound for value, bound in zip(self.correlations, self.bounds, strict=True)
         ]
         index = int(np.argmax(ratios))
         return (
