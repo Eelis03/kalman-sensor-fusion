@@ -193,9 +193,7 @@ def simulate(config: ScenarioConfig, seed: int) -> Scenario:
     """
     truth_seed, measurement_seed, latency_seed = np.random.SeedSequence(seed).spawn(3)
     truth_states = _generate_truth(config, np.random.default_rng(truth_seed))
-    truth_cartesian = np.stack(
-        [config.truth_model.to_cartesian(state) for state in truth_states]
-    )
+    truth_cartesian = np.stack([config.truth_model.to_cartesian(state) for state in truth_states])
     measurements = _generate_measurements(
         config,
         truth_cartesian,

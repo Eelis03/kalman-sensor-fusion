@@ -171,9 +171,7 @@ class TestCorrectlySpecifiedFilters:
 
     def test_native_nees_is_reported_when_the_models_match(self) -> None:
         """The exact state-space statistic is preferred over the projection."""
-        result = run_monte_carlo(
-            turning_target(steps=400), _matched_ukf, runs=6, seed=SEED
-        )
+        result = run_monte_carlo(turning_target(steps=400), _matched_ukf, runs=6, seed=SEED)
         assert result.native_nees_available
         assert assess(result).nees.statistic.startswith("NEES (state")
 
@@ -186,13 +184,9 @@ class TestMisspecifiedFilters:
 
         def build(scenario: Scenario) -> tuple[StateEstimator, GaussianState]:
             model = ConstantVelocity(spectral_density=density)
-            return UnscentedKalmanFilter(model), seeder.build(
-                model, scenario.truth_cartesian[0]
-            )
+            return UnscentedKalmanFilter(model), seeder.build(model, scenario.truth_cartesian[0])
 
-        return assess(
-            run_monte_carlo(turning_target(steps=STEPS), build, runs=runs, seed=SEED)
-        )
+        return assess(run_monte_carlo(turning_target(steps=STEPS), build, runs=runs, seed=SEED))
 
     def test_too_little_process_noise_is_optimistic(self) -> None:
         """A filter that ignores the turn claims an accuracy it does not have."""

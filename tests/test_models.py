@@ -77,9 +77,7 @@ def _central_difference(
 class TestAngles:
     """Wrapping is the foundation every angular quantity depends on."""
 
-    @pytest.mark.parametrize(
-        "angle", [0.0, 1.0, -1.0, 3.0, -3.0, 7.0, -7.0, 100.0, math.pi - 1e-9]
-    )
+    @pytest.mark.parametrize("angle", [0.0, 1.0, -1.0, 3.0, -3.0, 7.0, -7.0, 100.0, math.pi - 1e-9])
     def test_wrap_lands_in_range(self, angle: float) -> None:
         """Every wrapped angle lies in the half-open interval [-pi, pi)."""
         wrapped = wrap_scalar_to_pi(angle)
@@ -265,9 +263,7 @@ class TestProcessNoise:
             covariance = model.process_noise(state, 0.075)
             assert np.allclose(covariance, covariance.T, atol=1e-15)
             eigenvalues = np.linalg.eigvalsh(covariance)
-            assert float(np.min(eigenvalues)) > -1e-12 * max(
-                float(np.max(np.abs(covariance))), 1.0
-            )
+            assert float(np.min(eigenvalues)) > -1e-12 * max(float(np.max(np.abs(covariance))), 1.0)
 
     @pytest.mark.parametrize("model", MOTION_MODELS[:2], ids=lambda m: m.name)
     def test_linear_process_noise_composes_over_substeps(self, model: MotionModel) -> None:
@@ -282,10 +278,9 @@ class TestProcessNoise:
         dt = 0.04
         single = model.process_noise(state, 2.0 * dt)
         transition = model.jacobian(state, dt)
-        accumulated = (
-            transition @ model.process_noise(state, dt) @ transition.T
-            + model.process_noise(state, dt)
-        )
+        accumulated = transition @ model.process_noise(
+            state, dt
+        ) @ transition.T + model.process_noise(state, dt)
         assert np.allclose(single, accumulated, atol=1e-15, rtol=1e-12)
 
 

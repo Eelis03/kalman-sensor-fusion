@@ -170,9 +170,7 @@ class TestRecordedCampaigns:
         assessment = assess(_campaign(filter_name, "both"))
         for report in assessment.nis:
             sensor = report.statistic.removeprefix("NIS (").removesuffix(")")
-            assert report.mean == pytest.approx(
-                REFERENCE_NIS[filter_name, sensor], rel=RTOL
-            )
+            assert report.mean == pytest.approx(REFERENCE_NIS[filter_name, sensor], rel=RTOL)
 
     def test_fusing_beats_either_sensor_alone(self) -> None:
         """The recorded ordering of the accuracy figures is a real property."""
@@ -258,19 +256,16 @@ class TestMisspecifiedClassification:
 
         def build(scenario: Scenario) -> tuple[StateEstimator, GaussianState]:
             model = ConstantVelocity(spectral_density=density)
-            return UnscentedKalmanFilter(model), seeder.build(
-                model, scenario.truth_cartesian[0]
-            )
+            return UnscentedKalmanFilter(model), seeder.build(model, scenario.truth_cartesian[0])
 
-        return assess(
-            run_monte_carlo(turning_target(steps=STEPS), build, runs=RUNS, seed=SEED)
-        )
+        return assess(run_monte_carlo(turning_target(steps=STEPS), build, runs=RUNS, seed=SEED))
 
     def test_starved_filter_is_optimistic_by_a_wide_margin(self) -> None:
         """Too little process noise inflates NEES far above its four bound."""
         assessment = self._assess(0.05)
         assert assessment.nees.verdict is Verdict.OPTIMISTIC
         assert assessment.nees.mean > 20.0
+
     def test_flooded_filter_is_conservative_by_a_wide_margin(self) -> None:
         """Too much process noise pushes NEES well below its lower bound."""
         assessment = self._assess(4000.0)

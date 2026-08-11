@@ -146,9 +146,7 @@ def geometry_figure(steps: int, outdir: Path) -> Path:
         ("UKF, radar only", FusionSettings(sensors=("radar",))),
     )
     traces = [
-        run_filter(
-            UnscentedKalmanFilter(model), scenario, matched_belief(scenario), settings
-        )
+        run_filter(UnscentedKalmanFilter(model), scenario, matched_belief(scenario), settings)
         for _, settings in configurations
     ]
     target = outdir / "tracks.png"

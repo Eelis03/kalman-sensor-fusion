@@ -75,9 +75,7 @@ def test_script_runs_to_completion(
     assert captured.strip(), "a script that prints nothing has told the reader nothing"
 
 
-@pytest.mark.parametrize(
-    "name", ["compare_filters.py", "consistency_study.py", "make_figures.py"]
-)
+@pytest.mark.parametrize("name", ["compare_filters.py", "consistency_study.py", "make_figures.py"])
 def test_figure_writing_scripts_produce_files(name: str, outputs: Path) -> None:
     """Scripts that claim to write figures must actually write them."""
     module = _load(name)

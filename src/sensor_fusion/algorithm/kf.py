@@ -87,9 +87,7 @@ class KalmanFilter:
         # products and stays symmetric positive semi-definite even when the gain
         # is not exactly the optimal one, which the simpler (I - K H) P form does
         # not. At the optimal gain the two agree algebraically.
-        cov = symmetrize(
-            closed_loop @ state.cov @ closed_loop.T + gain @ sensor.noise_cov @ gain.T
-        )
+        cov = symmetrize(closed_loop @ state.cov @ closed_loop.T + gain @ sensor.noise_cov @ gain.T)
         nis = float(innovation @ np.linalg.solve(innovation_cov, innovation))
         return UpdateResult(
             state=GaussianState(mean=mean, cov=cov),

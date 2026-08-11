@@ -71,9 +71,7 @@ class TestUnscentedTransform:
         assert float(np.sum(cov_weights)) == pytest.approx(expected, abs=1e-13)
 
     @pytest.mark.parametrize("spec", SPECS, ids=lambda s: f"alpha{s.alpha}-kappa{s.kappa}")
-    def test_sigma_points_recover_the_mean_and_covariance(
-        self, spec: ScaledUnscentedSpec
-    ) -> None:
+    def test_sigma_points_recover_the_mean_and_covariance(self, spec: ScaledUnscentedSpec) -> None:
         """The transform of the identity map returns the input moments exactly."""
         rng = np.random.default_rng(3)
         for dim in (2, 4, 5):
